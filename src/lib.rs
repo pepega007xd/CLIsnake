@@ -1,16 +1,31 @@
 use core::fmt;
-use std::fmt::Formatter;
-use std::io::Write;
-use std::io::stdout;
-use std::time::Duration;
-use std::collections::VecDeque;
-use crossterm::execute;
-use crossterm::terminal;
-use rand::prelude::SliceRandom;
 use crossterm::cursor;
 use crossterm::event;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::execute;
+use crossterm::terminal;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use rand::prelude::SliceRandom;
+use std::collections::VecDeque;
+use std::fmt::Formatter;
+use std::io::stdout;
+use std::io::Write;
+use std::process::exit;
+use std::time::Duration;
+
+fn wait_for_unpause() {
+    loop {
+        match event::read().unwrap() {
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                break;
+            }
+            _ => (),
+        }
+    }
+}
 
 pub enum State {
     Playing,
@@ -20,6 +35,7 @@ pub struct Game {
     snake: VecDeque<Position>,
     direction: Direction,
     field: Field,
+    cycle_time: u64,
 }
 
 #[derive(Clone)]
@@ -85,7 +101,7 @@ impl Direction {
 struct Field {
     width: usize,
     height: usize,
-    content: Vec<Vec<Block>>,
+    field: Vec<Vec<Block>>,
 }
 
 impl Field {
@@ -93,14 +109,14 @@ impl Field {
         Field {
             width,
             height,
-            content: vec![vec![Block::Empty; width]; height],
+            field: vec![vec![Block::Empty; width]; height],
         }
     }
 
     fn set_position(&mut self, position: &Position, block: Block) {
         let x = position.x as usize;
         let y = position.y as usize;
-        self.content[y][x] = block;
+        self.field[y][x] = block;
     }
 
     fn get_position(&self, position: &Position) -> Block {
@@ -115,10 +131,7 @@ impl Field {
         let x = position.x as usize;
         let y = position.y as usize;
 
-        self.content
-            .get(y).unwrap()
-            .get(x).unwrap()
-            .to_owned()
+        self.field.get(y).unwrap().get(x).unwrap().to_owned()
     }
 
     fn place_food(&mut self) {
@@ -131,27 +144,29 @@ impl Field {
                 }
             }
         }
-        
+
         let chosen = allowed.choose(&mut rand::thread_rng()).unwrap();
         self.set_position(chosen, Block::Food);
     }
-    
+
     fn draw(&self) {
-        execute!(stdout(), 
-            terminal::Clear(terminal::ClearType::All), 
-            cursor::MoveTo(0,0)).unwrap();
+        execute!(
+            stdout(),
+            terminal::Clear(terminal::ClearType::All),
+            cursor::MoveTo(0, 0)
+        )
+        .unwrap();
         println!("┏{}┓\r", "━━".repeat(self.width));
 
-        self.content.iter().for_each(|row| {
+        self.field.iter().for_each(|row| {
             print!("┃");
             row.iter().for_each(|block| print!("{}", block));
-            println!("┃\r");           
+            println!("┃\r");
         });
 
         print!("┗{}┛", "━━".repeat(self.width));
         stdout().flush().unwrap();
     }
-
 }
 
 impl Game {
@@ -166,7 +181,8 @@ impl Game {
 
         let initial_position = Position {
             x: width as isize / 2,
-            y: height as isize / 2 };
+            y: height as isize / 2,
+        };
         let mut field = Field::new(width as usize, height as usize);
         field.set_position(&initial_position, Block::Snake);
         field.place_food();
@@ -175,28 +191,33 @@ impl Game {
             snake: VecDeque::from([initial_position]),
             direction: Direction::Right,
             field,
+            cycle_time: 300 * 1000 * 1000, // 300 ms
         }
     }
 
     pub fn play(&mut self) {
         loop {
             self.field.draw();
-            
+
             if let Some(direction) = self.poll_key() {
                 self.direction.set(&direction);
             }
 
             if let State::Lost = self.update() {
                 disable_raw_mode().unwrap();
-                execute!(stdout(), 
+                execute!(
+                    stdout(),
                     terminal::Clear(terminal::ClearType::All),
-                    cursor::MoveTo(0,0),
-                    cursor::Show).unwrap();
+                    cursor::MoveTo(0, 0),
+                    cursor::Show
+                )
+                .unwrap();
 
                 println!("Game over!");
                 break;
+            } else {
+                self.cycle_time = (self.cycle_time as f64 * 0.9999) as u64;
             }
-
         }
     }
 
@@ -213,42 +234,55 @@ impl Game {
                 self.field.set_position(tail, Block::Empty);
                 self.snake.pop_back();
                 State::Playing
-            },
+            }
 
             Block::Food => {
                 self.field.set_position(head, Block::Snake);
                 self.field.place_food();
                 State::Playing
-            },
+            }
 
             Block::Snake => State::Lost,
-            
+
             Block::Wall => State::Lost,
         }
     }
 
     fn poll_key(&self) -> Option<Direction> {
-        if event::poll(Duration::from_millis(300)).unwrap() {
+        if event::poll(Duration::from_nanos(self.cycle_time)).unwrap() {
             match event::read().unwrap() {
                 Event::Key(KeyEvent {
                     code: KeyCode::Up,
-                    modifiers: KeyModifiers::NONE
+                    modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Up),
 
                 Event::Key(KeyEvent {
                     code: KeyCode::Right,
-                    modifiers: KeyModifiers::NONE
+                    modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Right),
 
                 Event::Key(KeyEvent {
                     code: KeyCode::Down,
-                    modifiers: KeyModifiers::NONE
+                    modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Down),
 
                 Event::Key(KeyEvent {
                     code: KeyCode::Left,
-                    modifiers: KeyModifiers::NONE
+                    modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Left),
+
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('c'),
+                    modifiers: KeyModifiers::CONTROL,
+                }) => exit(1),
+
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('p'),
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    wait_for_unpause();
+                    None
+                }
 
                 _ => None,
             }
@@ -256,5 +290,4 @@ impl Game {
             None
         }
     }
-        
 }
