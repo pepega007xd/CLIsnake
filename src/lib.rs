@@ -149,7 +149,7 @@ impl Field {
         self.set_position(chosen, Block::Food);
     }
 
-    fn draw(&self) {
+    fn draw(&self, length: usize) {
         execute!(
             stdout(),
             terminal::Clear(terminal::ClearType::All),
@@ -164,7 +164,10 @@ impl Field {
             println!("┃\r");
         });
 
-        print!("┗{}┛", "━━".repeat(self.width));
+        let score_str = format!("score: {length}");
+        print!("┗━━");
+        print!("{score_str}");
+        print!("{}┛", "━━".repeat(self.width - score_str.len() / 2 - 1));
         stdout().flush().unwrap();
     }
 }
@@ -197,7 +200,7 @@ impl Game {
 
     pub fn play(&mut self) {
         loop {
-            self.field.draw();
+            self.field.draw(self.snake.len());
 
             if let Some(direction) = self.poll_key() {
                 self.direction.set(&direction);
@@ -216,7 +219,7 @@ impl Game {
                 println!("Game over!");
                 break;
             } else {
-                self.cycle_time = (self.cycle_time as f64 * 0.9999) as u64;
+                self.cycle_time = (self.cycle_time as f64 * 0.9995) as u64;
             }
         }
     }
@@ -252,22 +255,22 @@ impl Game {
         if event::poll(Duration::from_nanos(self.cycle_time)).unwrap() {
             match event::read().unwrap() {
                 Event::Key(KeyEvent {
-                    code: KeyCode::Up,
+                    code: KeyCode::Up | KeyCode::Char('k'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Up),
 
                 Event::Key(KeyEvent {
-                    code: KeyCode::Right,
+                    code: KeyCode::Right | KeyCode::Char('l'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Right),
 
                 Event::Key(KeyEvent {
-                    code: KeyCode::Down,
+                    code: KeyCode::Down | KeyCode::Char('j'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Down),
 
                 Event::Key(KeyEvent {
-                    code: KeyCode::Left,
+                    code: KeyCode::Left | KeyCode::Char('h'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Left),
 
