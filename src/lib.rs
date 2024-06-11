@@ -166,8 +166,8 @@ impl Field {
 
         let score_str = format!("score: {length}");
         print!("┗━━");
-        print!("{score_str}");
-        print!("{}┛", "━━".repeat(self.width - score_str.len() / 2 - 1));
+        print!(" {score_str} ");
+        print!("{}┛", "━".repeat(self.width * 2 - score_str.len() - 4));
         stdout().flush().unwrap();
     }
 }
@@ -176,7 +176,6 @@ impl Game {
     pub fn new() -> Game {
         enable_raw_mode().unwrap();
         execute!(stdout(), cursor::Hide).unwrap();
-
         let (term_width, term_height) = crossterm::terminal::size().unwrap();
 
         let width = term_width / 2 - 2;
@@ -216,7 +215,7 @@ impl Game {
                 )
                 .unwrap();
 
-                println!("Game over!");
+                println!("Game over!\nScore: {}", self.snake.len() - 1);
                 break;
             } else {
                 self.cycle_time = (self.cycle_time as f64 * 0.9995) as u64;
