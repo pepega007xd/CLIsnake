@@ -27,6 +27,7 @@ fn wait_for_unpause() {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum State {
     Playing,
     Lost,
@@ -35,10 +36,10 @@ pub struct Game {
     snake: VecDeque<Position>,
     direction: Direction,
     field: Field,
-    cycle_time: u64,
+    cycle_time: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct Position {
     x: isize,
     y: isize,
@@ -61,24 +62,29 @@ impl Position {
 enum Block {
     Empty,
     Snake,
+    SnakeHead,
     Wall,
     Food,
 }
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let block = match self {
-            Block::Empty => "  ",
-            Block::Food => "▒▒",
-            Block::Snake => "██",
-            Block::Wall => "██",
-        };
-
-        write!(f, "{}", block)
+        match self {
+            Block::Empty => write!(f, "  "),
+            Block::Food => write!(f, "▒▒"),
+            Block::Snake => write!(f, "██"),
+            Block::SnakeHead => write!(
+                f,
+                "{}██{}",
+                crossterm::style::SetForegroundColor(crossterm::style::Color::Yellow),
+                crossterm::style::SetForegroundColor(crossterm::style::Color::White)
+            ),
+            Block::Wall => write!(f, "██"),
+        }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum Direction {
     Up,
     Right,
@@ -113,13 +119,13 @@ impl Field {
         }
     }
 
-    fn set_position(&mut self, position: &Position, block: Block) {
+    fn set_position(&mut self, position: Position, block: Block) {
         let x = position.x as usize;
         let y = position.y as usize;
         self.field[y][x] = block;
     }
 
-    fn get_position(&self, position: &Position) -> Block {
+    fn get_position(&self, position: Position) -> Block {
         if position.x < 0 || position.x >= self.width as isize {
             return Block::Wall;
         }
@@ -139,14 +145,14 @@ impl Field {
         for y in 0..self.height as isize {
             for x in 0..self.width as isize {
                 let position = Position { x, y };
-                if let Block::Empty = self.get_position(&position) {
+                if let Block::Empty = self.get_position(position) {
                     allowed.push(position)
                 }
             }
         }
 
         let chosen = allowed.choose(&mut rand::thread_rng()).unwrap();
-        self.set_position(chosen, Block::Food);
+        self.set_position(*chosen, Block::Food);
     }
 
     fn draw(&self, length: usize) {
@@ -186,14 +192,14 @@ impl Game {
             y: height as isize / 2,
         };
         let mut field = Field::new(width as usize, height as usize);
-        field.set_position(&initial_position, Block::Snake);
+        field.set_position(initial_position, Block::SnakeHead);
         field.place_food();
 
         Game {
             snake: VecDeque::from([initial_position]),
             direction: Direction::Right,
             field,
-            cycle_time: 300 * 1000 * 1000, // 300 ms
+            cycle_time: 300. * 1000. * 1000., // 300 ms
         }
     }
 
@@ -218,58 +224,58 @@ impl Game {
                 println!("Game over!\nScore: {}", self.snake.len() - 1);
                 break;
             } else {
-                self.cycle_time = (self.cycle_time as f64 * 0.9995) as u64;
+                self.cycle_time *= 0.9997;
             }
         }
     }
 
     fn update(&mut self) -> State {
-        let head = self.snake.front().unwrap().step(&self.direction);
-        self.snake.push_front(head);
+        let old_head = *self.snake.front().unwrap();
+        let new_head = old_head.step(&self.direction);
+        self.snake.push_front(new_head);
 
-        let head = self.snake.front().unwrap();
-        let tail = self.snake.back().unwrap();
+        let tail = *self.snake.back().unwrap();
 
-        match self.field.get_position(head) {
+        match self.field.get_position(new_head) {
             Block::Empty => {
-                self.field.set_position(head, Block::Snake);
+                self.field.set_position(new_head, Block::SnakeHead);
+                self.field.set_position(old_head, Block::Snake);
                 self.field.set_position(tail, Block::Empty);
                 self.snake.pop_back();
                 State::Playing
             }
 
             Block::Food => {
-                self.field.set_position(head, Block::Snake);
+                self.field.set_position(new_head, Block::SnakeHead);
+                self.field.set_position(old_head, Block::Snake);
                 self.field.place_food();
                 State::Playing
             }
 
-            Block::Snake => State::Lost,
-
-            Block::Wall => State::Lost,
+            _ => State::Lost,
         }
     }
 
     fn poll_key(&self) -> Option<Direction> {
-        if event::poll(Duration::from_nanos(self.cycle_time)).unwrap() {
+        if event::poll(Duration::from_nanos(self.cycle_time as u64)).unwrap() {
             match event::read().unwrap() {
                 Event::Key(KeyEvent {
-                    code: KeyCode::Up | KeyCode::Char('k'),
+                    code: KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('w'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Up),
 
                 Event::Key(KeyEvent {
-                    code: KeyCode::Right | KeyCode::Char('l'),
+                    code: KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('d'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Right),
 
                 Event::Key(KeyEvent {
-                    code: KeyCode::Down | KeyCode::Char('j'),
+                    code: KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('s'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Down),
 
                 Event::Key(KeyEvent {
-                    code: KeyCode::Left | KeyCode::Char('h'),
+                    code: KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('a'),
                     modifiers: KeyModifiers::NONE,
                 }) => Some(Direction::Left),
 
