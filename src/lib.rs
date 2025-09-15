@@ -62,9 +62,28 @@ impl Position {
 enum Block {
     Empty,
     Snake,
-    SnakeHead,
+    SnakeHead(Direction),
     Wall,
     Food,
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let head = match self {
+            Direction::Up => "▀▀",
+            Direction::Right => " █",
+            Direction::Down => "▄▄",
+            Direction::Left => "█ ",
+        };
+
+        write!(
+            f,
+            "{}{}{}",
+            crossterm::style::SetForegroundColor(crossterm::style::Color::Yellow),
+            head,
+            crossterm::style::SetForegroundColor(crossterm::style::Color::White)
+        )
+    }
 }
 
 impl fmt::Display for Block {
@@ -73,20 +92,16 @@ impl fmt::Display for Block {
             Block::Empty => write!(f, "  "),
             Block::Food => write!(f, "▒▒"),
             Block::Snake => write!(f, "██"),
-            Block::SnakeHead => write!(
-                f,
-                "{}██{}",
-                crossterm::style::SetForegroundColor(crossterm::style::Color::Yellow),
-                crossterm::style::SetForegroundColor(crossterm::style::Color::White)
-            ),
+            Block::SnakeHead(d) => d.fmt(f),
             Block::Wall => write!(f, "██"),
         }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 enum Direction {
     Up,
+    #[default]
     Right,
     Down,
     Left,
@@ -170,7 +185,7 @@ impl Field {
             println!("┃\r");
         });
 
-        let score_str = format!("score: {length}");
+        let score_str = format!("score: {}", length - 2);
         print!("┗━━");
         print!(" {score_str} ");
         print!("{}┛", "━".repeat(self.width * 2 - score_str.len() - 4));
@@ -191,13 +206,19 @@ impl Game {
             x: width as isize / 2,
             y: height as isize / 2,
         };
+        let tail_position = Position {
+            x: initial_position.x - 1,
+            ..initial_position
+        };
+
         let mut field = Field::new(width as usize, height as usize);
-        field.set_position(initial_position, Block::SnakeHead);
+        field.set_position(initial_position, Block::SnakeHead(Direction::default()));
+        field.set_position(tail_position, Block::Snake);
         field.place_food();
 
         Game {
-            snake: VecDeque::from([initial_position]),
-            direction: Direction::Right,
+            snake: VecDeque::from([initial_position, tail_position]),
+            direction: Direction::default(),
             field,
             cycle_time: 300. * 1000. * 1000., // 300 ms
         }
@@ -221,7 +242,7 @@ impl Game {
                 )
                 .unwrap();
 
-                println!("Game over!\nScore: {}", self.snake.len() - 1);
+                println!("Game over!\nScore: {}", self.snake.len() - 3);
                 break;
             } else {
                 self.cycle_time *= 0.9997;
@@ -238,7 +259,8 @@ impl Game {
 
         match self.field.get_position(new_head) {
             Block::Empty => {
-                self.field.set_position(new_head, Block::SnakeHead);
+                self.field
+                    .set_position(new_head, Block::SnakeHead(self.direction));
                 self.field.set_position(old_head, Block::Snake);
                 self.field.set_position(tail, Block::Empty);
                 self.snake.pop_back();
@@ -246,7 +268,8 @@ impl Game {
             }
 
             Block::Food => {
-                self.field.set_position(new_head, Block::SnakeHead);
+                self.field
+                    .set_position(new_head, Block::SnakeHead(self.direction));
                 self.field.set_position(old_head, Block::Snake);
                 self.field.place_food();
                 State::Playing
