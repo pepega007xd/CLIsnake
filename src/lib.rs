@@ -170,7 +170,7 @@ impl Field {
         self.set_position(*chosen, Block::Food);
     }
 
-    fn draw(&self, length: usize) {
+    fn draw(&self, length: usize, paused: bool) {
         execute!(
             stdout(),
             terminal::Clear(terminal::ClearType::All),
@@ -188,7 +188,14 @@ impl Field {
         let score_str = format!("score: {}", length - 2);
         print!("┗━━");
         print!(" {score_str} ");
-        print!("{}┛", "━".repeat(self.width * 2 - score_str.len() - 4));
+        if paused {
+            print!(
+                "━━ [PAUSED] {}┛",
+                "━".repeat(self.width * 2 - score_str.len() - 16)
+            );
+        } else {
+            print!("{}┛", "━".repeat(self.width * 2 - score_str.len() - 4));
+        }
         stdout().flush().unwrap();
     }
 }
@@ -226,7 +233,7 @@ impl Game {
 
     pub fn play(&mut self) {
         loop {
-            self.field.draw(self.snake.len());
+            self.field.draw(self.snake.len(), false);
 
             if let Some(direction) = self.poll_key() {
                 self.direction.set(&direction);
@@ -311,6 +318,7 @@ impl Game {
                     code: KeyCode::Char('p'),
                     modifiers: KeyModifiers::NONE,
                 }) => {
+                    self.field.draw(self.snake.len(), true);
                     wait_for_unpause();
                     None
                 }
